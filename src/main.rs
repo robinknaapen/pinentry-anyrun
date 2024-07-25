@@ -17,6 +17,8 @@ struct ConfigRon {
 #[allow(dead_code)]
 enum IPCIn<'a> {
     // https://www.gnupg.org/documentation/manuals/assuan/Client-requests.html#Client-requests
+    Comment,
+
     Bye,
     Reset,
     End,
@@ -25,17 +27,18 @@ enum IPCIn<'a> {
     Nop,
 
     GetPin,
-    Comment,
 
     SetPrompt(&'a str),
     SetDesc(&'a str),
     SetTitle(&'a str),
 
-    Unknown,
+    Unknown(&'a str),
 }
 
 #[allow(dead_code)]
 enum IPCOut<'a> {
+    Comment(Option<&'a str>),
+
     Bye(Option<&'a str>),
 
     Ok(Option<&'a str>),
@@ -44,8 +47,6 @@ enum IPCOut<'a> {
     D(&'a str),
     End,
     Option((&'a str, Option<&'a str>)),
-
-    Comment(Option<&'a str>),
 }
 
 impl fmt::Display for IPCOut<'_> {
@@ -102,7 +103,7 @@ impl<'a> From<&'a str> for IPCIn<'a> {
                     None => Self::Option((arg, None)),
                 },
 
-                _ => Self::Unknown,
+                _ => Self::Unknown(command),
             },
         }
     }
@@ -139,6 +140,18 @@ async fn main() {
                 let _ = writeln!(stdout, "{}", IPCOut::Ok(Some("closing connection"))).await;
             }
 
+            IPCIn::End => {
+                todo!();
+            }
+
+            IPCIn::Help => {
+                todo!();
+            }
+
+            IPCIn::Option(_p) => {
+                let _ = writeln!(stdout, "{}", IPCOut::Ok(None)).await;
+            }
+
             IPCIn::Nop => {
                 let _ = writeln!(stdout, "{}", IPCOut::Ok(None)).await;
             }
@@ -168,7 +181,8 @@ async fn main() {
                 let _ = writeln!(stdout, "{}", IPCOut::Ok(None)).await;
             }
 
-            _ => {
+            IPCIn::Unknown(v) => {
+                let _ = writeln!(stdout, "{}", IPCOut::Comment(Some(v))).await;
                 let _ = writeln!(
                     stdout,
                     "{}",
