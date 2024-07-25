@@ -15,7 +15,6 @@ struct ConfigRon {
     description: Option<String>,
 }
 
-#[allow(dead_code)]
 enum IpcIn<'a> {
     // https://www.gnupg.org/documentation/manuals/assuan/Client-requests.html#Client-requests
     Comment,
@@ -69,13 +68,6 @@ impl fmt::Display for IpcOut<'_> {
 
             Self::Bye(None) => write!(f, "BYE"),
             Self::Bye(Some(v)) => write!(f, "BYE {}", v),
-            // Self::GetPin => write!(f, "GETPIN"),
-            // Self::SetPrompt(arg) => write!(f, "SETPROMPT {}", arg),
-            // IPC::SetTitle(arg) => write!(f, "SETTITLE {}", arg),
-            // IPC::SetDesc(arg) => write!(f, "SETDESC {}", arg),
-            //
-            // IPC::Err((id, desc)) => write!(f, "ERR {} {}", id, desc),
-            // IPC::Unknown => write!(f, "ERR 536871187 Unknown IPC command"),
         }
     }
 }
@@ -198,6 +190,8 @@ async fn main() {
             IpcIn::Unknown(v) => {
                 let _ = writeln!(stdout, "{}", IpcOut::Comment(Some(v))).await;
                 let _ = writeln!(stdout, "{}", IpcOut::Ok(None)).await;
+                // pinentry will break when atually returning an error
+                // I need to look into that
                 // let _ = writeln!(
                 //     stdout,
                 //     "{}",
@@ -235,9 +229,9 @@ async fn anyrun<'a>(config: &ConfigRon) -> Result<String, IpcOut<'a>> {
     };
 
     let _ = writeln!(anyrun_stdin, "{}", c).await;
-	if let Err(e) = process.status().await {
-		return Result::Err(IpcOut::Err(("ERR", e.to_string())))
-	}
+    if let Err(e) = process.status().await {
+        return Result::Err(IpcOut::Err(("ERR", e.to_string())));
+    }
 
     let mut lines = BufReader::new(process.stdout.take().unwrap()).lines();
     if let Some(line) = lines.next().await {
