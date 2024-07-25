@@ -1,4 +1,5 @@
 use async_process::Command;
+use percent_encoding_rfc3986::percent_decode_str;
 use std::fmt;
 use std::process::Stdio;
 
@@ -168,12 +169,28 @@ async fn main() {
             },
 
             IPCIn::SetDesc(d) => {
-                config.description = Some(d.to_string());
+                let decoded = match percent_decode_str(d) {
+                    Ok(decoder) => match decoder.decode_utf8() {
+                        Ok(v) => v.to_string(),
+                        Err(_) => d.to_string(),
+                    },
+                    Err(_) => d.to_string(),
+                };
+
+                config.description = Some(decoded);
                 let _ = writeln!(stdout, "{}", IPCOut::Ok(None)).await;
             }
 
             IPCIn::SetTitle(t) => {
-                config.title = Some(t.to_string());
+                let decoded = match percent_decode_str(t) {
+                    Ok(decoder) => match decoder.decode_utf8() {
+                        Ok(v) => v.to_string(),
+                        Err(_) => t.to_string(),
+                    },
+                    Err(_) => t.to_string(),
+                };
+
+                config.title = Some(decoded);
                 let _ = writeln!(stdout, "{}", IPCOut::Ok(None)).await;
             }
 
@@ -183,15 +200,16 @@ async fn main() {
 
             IPCIn::Unknown(v) => {
                 let _ = writeln!(stdout, "{}", IPCOut::Comment(Some(v))).await;
-                let _ = writeln!(
-                    stdout,
-                    "{}",
-                    IPCOut::Err((
-                        "536871187",
-                        "Unknown IPC command <User defined source 1>".into()
-                    )),
-                )
-                .await;
+                let _ = writeln!(stdout, "{}", IPCOut::Ok(None)).await;
+                // let _ = writeln!(
+                //     stdout,
+                //     "{}",
+                //     IPCOut::Err((
+                //         "536871187",
+                //         "Unknown IPC command <User defined source 1>".into()
+                //     )),
+                // )
+                // .await;
             }
         }
     }
@@ -233,5 +251,8 @@ async fn anyrun<'a>(config: &ConfigRon) -> Result<String, IPCOut<'a>> {
         };
     }
 
-    Result::Err(IPCOut::Err(("ERR", "Empty input".into())))
+    Result::Err(IPCOut::Err((
+        "83886179",
+        "Operation cancelled <pinentry-anyrun>".into(),
+    )))
 }

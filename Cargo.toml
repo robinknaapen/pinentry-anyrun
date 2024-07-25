@@ -9,3 +9,4 @@ async-std = {version = "1.12.0", features = ["attributes"]}
 async-process = "2.2.3"
 ron = "0.8"
 serde = { version = "1", features = ["derive"] }
+percent-encoding-rfc3986 = "0.1.3"
