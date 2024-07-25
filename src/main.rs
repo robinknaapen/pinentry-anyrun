@@ -84,10 +84,7 @@ impl<'a> From<&'a str> for IpcIn<'a> {
     fn from(command: &'a str) -> IpcIn<'a> {
         match &command[..1] {
             "#" => Self::Comment,
-            _ => match command
-                .split_once(" ")
-                .or(Some((command.to_string().as_str(), "")))
-            {
+            _ => match command.split_once(' ').or(Some((command, ""))) {
                 Some(("BYE", _)) => Self::Bye,
                 Some(("RESET", _)) => Self::Reset,
                 Some(("END", _)) => Self::End,
@@ -99,7 +96,7 @@ impl<'a> From<&'a str> for IpcIn<'a> {
                 Some(("SETTITLE", arg)) => Self::SetTitle(arg),
                 Some(("SETPROMPT", arg)) => Self::SetPrompt(arg),
 
-                Some(("OPTION", arg)) => match arg.split_once("=") {
+                Some(("OPTION", arg)) => match arg.split_once('=') {
                     Some((k, v)) => Self::Option((k, Some(v))),
                     None => Self::Option((arg, None)),
                 },
@@ -138,7 +135,7 @@ async fn main() {
 
             IpcIn::Reset => {
                 config = ConfigRon::default();
-                let _ = writeln!(stdout, "{}", IpcOut::Ok(Some("closing connection"))).await;
+                let _ = writeln!(stdout, "{}", IpcOut::Ok(None)).await;
             }
 
             IpcIn::End => {
@@ -238,13 +235,12 @@ async fn anyrun<'a>(config: &ConfigRon) -> Result<String, IpcOut<'a>> {
     };
 
     let _ = writeln!(anyrun_stdin, "{}", c).await;
-    match process.status().await {
-        Err(e) => return Result::Err(IpcOut::Err(("ERR", e.to_string()))),
-        _ => {}
-    }
+	if let Err(e) = process.status().await {
+		return Result::Err(IpcOut::Err(("ERR", e.to_string())))
+	}
 
     let mut lines = BufReader::new(process.stdout.take().unwrap()).lines();
-    while let Some(line) = lines.next().await {
+    if let Some(line) = lines.next().await {
         return match line {
             Ok(v) => Result::Ok(v),
             Err(e) => return Result::Err(IpcOut::Err(("ERR", e.to_string()))),
