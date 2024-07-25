@@ -16,7 +16,7 @@ struct ConfigRon {
 }
 
 #[allow(dead_code)]
-enum IPCIn<'a> {
+enum IpcIn<'a> {
     // https://www.gnupg.org/documentation/manuals/assuan/Client-requests.html#Client-requests
     Comment,
 
@@ -37,7 +37,7 @@ enum IPCIn<'a> {
 }
 
 #[allow(dead_code)]
-enum IPCOut<'a> {
+enum IpcOut<'a> {
     Comment(Option<&'a str>),
 
     Bye(Option<&'a str>),
@@ -50,7 +50,7 @@ enum IPCOut<'a> {
     Option((&'a str, Option<&'a str>)),
 }
 
-impl fmt::Display for IPCOut<'_> {
+impl fmt::Display for IpcOut<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self {
             Self::Ok(None) => write!(f, "OK"),
@@ -80,8 +80,8 @@ impl fmt::Display for IPCOut<'_> {
     }
 }
 
-impl<'a> From<&'a str> for IPCIn<'a> {
-    fn from(command: &'a str) -> IPCIn<'a> {
+impl<'a> From<&'a str> for IpcIn<'a> {
+    fn from(command: &'a str) -> IpcIn<'a> {
         match &command[..1] {
             "#" => Self::Comment,
             _ => match command
@@ -117,50 +117,50 @@ async fn main() {
     let mut lines = BufReader::new(stdin()).lines();
     let mut stdout = stdout();
 
-    let _ = writeln!(stdout, "{}", IPCOut::Ok(Some("Pleased to meet you"))).await;
+    let _ = writeln!(stdout, "{}", IpcOut::Ok(Some("Pleased to meet you"))).await;
     while let Some(line) = lines.next().await {
         let l = match line {
             Ok(l) => l,
             Err(e) => {
-                let _ = writeln!(stdout, "{}", IPCOut::Err(("536871187", e.to_string(),)),).await;
+                let _ = writeln!(stdout, "{}", IpcOut::Err(("536871187", e.to_string(),)),).await;
                 break;
             }
         };
 
-        let command = IPCIn::from(l.as_str());
+        let command = IpcIn::from(l.as_str());
         match command {
-            IPCIn::Comment => continue,
+            IpcIn::Comment => continue,
 
-            IPCIn::Bye => {
-                let _ = writeln!(stdout, "{}", IPCOut::Ok(Some("closing connection"))).await;
+            IpcIn::Bye => {
+                let _ = writeln!(stdout, "{}", IpcOut::Ok(Some("closing connection"))).await;
                 break;
             }
 
-            IPCIn::Reset => {
+            IpcIn::Reset => {
                 config = ConfigRon::default();
-                let _ = writeln!(stdout, "{}", IPCOut::Ok(Some("closing connection"))).await;
+                let _ = writeln!(stdout, "{}", IpcOut::Ok(Some("closing connection"))).await;
             }
 
-            IPCIn::End => {
+            IpcIn::End => {
                 todo!();
             }
 
-            IPCIn::Help => {
+            IpcIn::Help => {
                 todo!();
             }
 
-            IPCIn::Option(_p) => {
-                let _ = writeln!(stdout, "{}", IPCOut::Ok(None)).await;
+            IpcIn::Option(_p) => {
+                let _ = writeln!(stdout, "{}", IpcOut::Ok(None)).await;
             }
 
-            IPCIn::Nop => {
-                let _ = writeln!(stdout, "{}", IPCOut::Ok(None)).await;
+            IpcIn::Nop => {
+                let _ = writeln!(stdout, "{}", IpcOut::Ok(None)).await;
             }
 
-            IPCIn::GetPin => match anyrun(&config).await {
+            IpcIn::GetPin => match anyrun(&config).await {
                 Ok(s) => {
                     let _ = writeln!(stdout, "{}", s).await;
-                    let _ = writeln!(stdout, "{}", IPCOut::Ok(None)).await;
+                    let _ = writeln!(stdout, "{}", IpcOut::Ok(None)).await;
                 }
                 Err(e) => {
                     let _ = writeln!(stdout, "{}", e).await;
@@ -168,7 +168,7 @@ async fn main() {
                 }
             },
 
-            IPCIn::SetDesc(d) => {
+            IpcIn::SetDesc(d) => {
                 let decoded = match percent_decode_str(d) {
                     Ok(decoder) => match decoder.decode_utf8() {
                         Ok(v) => v.to_string(),
@@ -178,10 +178,10 @@ async fn main() {
                 };
 
                 config.description = Some(decoded);
-                let _ = writeln!(stdout, "{}", IPCOut::Ok(None)).await;
+                let _ = writeln!(stdout, "{}", IpcOut::Ok(None)).await;
             }
 
-            IPCIn::SetTitle(t) => {
+            IpcIn::SetTitle(t) => {
                 let decoded = match percent_decode_str(t) {
                     Ok(decoder) => match decoder.decode_utf8() {
                         Ok(v) => v.to_string(),
@@ -191,16 +191,16 @@ async fn main() {
                 };
 
                 config.title = Some(decoded);
-                let _ = writeln!(stdout, "{}", IPCOut::Ok(None)).await;
+                let _ = writeln!(stdout, "{}", IpcOut::Ok(None)).await;
             }
 
-            IPCIn::SetPrompt(_p) => {
-                let _ = writeln!(stdout, "{}", IPCOut::Ok(None)).await;
+            IpcIn::SetPrompt(_p) => {
+                let _ = writeln!(stdout, "{}", IpcOut::Ok(None)).await;
             }
 
-            IPCIn::Unknown(v) => {
-                let _ = writeln!(stdout, "{}", IPCOut::Comment(Some(v))).await;
-                let _ = writeln!(stdout, "{}", IPCOut::Ok(None)).await;
+            IpcIn::Unknown(v) => {
+                let _ = writeln!(stdout, "{}", IpcOut::Comment(Some(v))).await;
+                let _ = writeln!(stdout, "{}", IpcOut::Ok(None)).await;
                 // let _ = writeln!(
                 //     stdout,
                 //     "{}",
@@ -215,7 +215,7 @@ async fn main() {
     }
 }
 
-async fn anyrun<'a>(config: &ConfigRon) -> Result<String, IPCOut<'a>> {
+async fn anyrun<'a>(config: &ConfigRon) -> Result<String, IpcOut<'a>> {
     let mut process = match Command::new("anyrun")
         .args([
             "--plugins",
@@ -228,18 +228,18 @@ async fn anyrun<'a>(config: &ConfigRon) -> Result<String, IPCOut<'a>> {
         .spawn()
     {
         Ok(c) => c,
-        Err(e) => return Result::Err(IPCOut::Err(("ERR", e.to_string()))),
+        Err(e) => return Result::Err(IpcOut::Err(("ERR", e.to_string()))),
     };
 
     let mut anyrun_stdin = process.stdin.take().unwrap();
     let c = match ron::to_string(config) {
         Ok(s) => s,
-        Err(e) => return Result::Err(IPCOut::Err(("ERR", e.to_string()))),
+        Err(e) => return Result::Err(IpcOut::Err(("ERR", e.to_string()))),
     };
 
     let _ = writeln!(anyrun_stdin, "{}", c).await;
     match process.status().await {
-        Err(e) => return Result::Err(IPCOut::Err(("ERR", e.to_string()))),
+        Err(e) => return Result::Err(IpcOut::Err(("ERR", e.to_string()))),
         _ => {}
     }
 
@@ -247,11 +247,11 @@ async fn anyrun<'a>(config: &ConfigRon) -> Result<String, IPCOut<'a>> {
     while let Some(line) = lines.next().await {
         return match line {
             Ok(v) => Result::Ok(v),
-            Err(e) => return Result::Err(IPCOut::Err(("ERR", e.to_string()))),
+            Err(e) => return Result::Err(IpcOut::Err(("ERR", e.to_string()))),
         };
     }
 
-    Result::Err(IPCOut::Err((
+    Result::Err(IpcOut::Err((
         "83886179",
         "Operation cancelled <pinentry-anyrun>".into(),
     )))
