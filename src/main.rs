@@ -1,13 +1,12 @@
 use async_process::Command;
-use percent_encoding_rfc3986::percent_decode_str;
-use std::fmt;
-use std::process::Stdio;
-
 use async_std::{
     io::{stdin, stdout, BufReader},
     prelude::*,
 };
+use percent_encoding_rfc3986::percent_decode_str;
 use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::process::Stdio;
 
 #[derive(Default, Deserialize, Serialize)]
 struct ConfigRon {
@@ -74,26 +73,29 @@ impl fmt::Display for IpcOut<'_> {
 
 impl<'a> From<&'a str> for IpcIn<'a> {
     fn from(command: &'a str) -> IpcIn<'a> {
-        match &command[..1] {
-            "#" => Self::Comment,
-            _ => match command.split_once(' ').or(Some((command, ""))) {
-                Some(("BYE", _)) => Self::Bye,
-                Some(("RESET", _)) => Self::Reset,
-                Some(("END", _)) => Self::End,
-                Some(("HELP", _)) => Self::Help,
-                Some(("NOP", _)) => Self::Nop,
+        match command.len() {
+            0 => Self::Comment,
+            _ => match &command[..1] {
+                "#" => Self::Comment,
+                _ => match command.split_once(' ').or(Some((command, ""))) {
+                    Some(("BYE", _)) => Self::Bye,
+                    Some(("RESET", _)) => Self::Reset,
+                    Some(("END", _)) => Self::End,
+                    Some(("HELP", _)) => Self::Help,
+                    Some(("NOP", _)) => Self::Nop,
 
-                Some(("GETPIN", _)) => Self::GetPin,
-                Some(("SETDESC", arg)) => Self::SetDesc(arg),
-                Some(("SETTITLE", arg)) => Self::SetTitle(arg),
-                Some(("SETPROMPT", arg)) => Self::SetPrompt(arg),
+                    Some(("GETPIN", _)) => Self::GetPin,
+                    Some(("SETDESC", arg)) => Self::SetDesc(arg),
+                    Some(("SETTITLE", arg)) => Self::SetTitle(arg),
+                    Some(("SETPROMPT", arg)) => Self::SetPrompt(arg),
 
-                Some(("OPTION", arg)) => match arg.split_once('=') {
-                    Some((k, v)) => Self::Option((k, Some(v))),
-                    None => Self::Option((arg, None)),
+                    Some(("OPTION", arg)) => match arg.split_once('=') {
+                        Some((k, v)) => Self::Option((k, Some(v))),
+                        None => Self::Option((arg, None)),
+                    },
+
+                    _ => Self::Unknown(command),
                 },
-
-                _ => Self::Unknown(command),
             },
         }
     }
@@ -189,18 +191,18 @@ async fn main() {
 
             IpcIn::Unknown(v) => {
                 let _ = writeln!(stdout, "{}", IpcOut::Comment(Some(v))).await;
-                let _ = writeln!(stdout, "{}", IpcOut::Ok(None)).await;
+                // let _ = writeln!(stdout, "{}", IpcOut::Ok(None)).await;
                 // pinentry will break when atually returning an error
                 // I need to look into that
-                // let _ = writeln!(
-                //     stdout,
-                //     "{}",
-                //     IPCOut::Err((
-                //         "536871187",
-                //         "Unknown IPC command <User defined source 1>".into()
-                //     )),
-                // )
-                // .await;
+                let _ = writeln!(
+                    stdout,
+                    "{}",
+                    IpcOut::Err((
+                        "536871187",
+                        "Unknown IPC command <User defined source 1>".into()
+                    )),
+                )
+                .await;
             }
         }
     }
@@ -213,6 +215,8 @@ async fn anyrun<'a>(config: &ConfigRon) -> Result<String, IpcOut<'a>> {
             "libpinentry.so",
             "--show-results-immediately",
             "true",
+            "--mode",
+            "pinentry",
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
