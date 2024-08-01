@@ -1,12 +1,28 @@
+use clap::Parser;
+use std::process::Stdio;
+
+use assuan_rs::{
+    errors,
+    errors::GpgErrorCode,
+    response::{self, Response, ResponseErr},
+    server::{
+        self, HandlerRequest, HandlerResult, HelpResult, OptionRequest, OptionResult, ServerError,
+    },
+};
 use async_process::Command;
 use async_std::{
     io::{stdin, stdout, BufReader},
     prelude::*,
 };
+
 use percent_encoding_rfc3986::percent_decode_str;
 use serde::{Deserialize, Serialize};
-use std::fmt;
-use std::process::Stdio;
+
+#[derive(Parser)]
+struct Args {
+    #[arg(long, default_value_t = String::from("anyrun"))]
+    anyrun: String,
+}
 
 #[derive(Default, Deserialize, Serialize)]
 struct ConfigRon {
@@ -14,152 +30,41 @@ struct ConfigRon {
     description: Option<String>,
 }
 
-enum IpcIn<'a> {
-    // https://www.gnupg.org/documentation/manuals/assuan/Client-requests.html#Client-requests
-    Comment,
-
-    Bye,
-    Reset,
-    End,
-    Help,
-    Option((&'a str, Option<&'a str>)),
-    Nop,
-
-    GetPin,
-
-    SetPrompt(&'a str),
-    SetDesc(&'a str),
-    SetTitle(&'a str),
-
-    Unknown(&'a str),
+struct HandlerConfig {
+    args: Args,
+    ron: ConfigRon,
 }
 
-#[allow(dead_code)]
-enum IpcOut<'a> {
-    Comment(Option<&'a str>),
-
-    Bye(Option<&'a str>),
-
-    Ok(Option<&'a str>),
-    Err((&'a str, String)),
-
-    D(&'a str),
-    End,
-    Option((&'a str, Option<&'a str>)),
+struct Handler {
+    config: HandlerConfig,
 }
 
-impl fmt::Display for IpcOut<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self {
-            Self::Ok(None) => write!(f, "OK"),
-            Self::Ok(Some(arg)) => write!(f, "OK {}", arg),
-
-            Self::Err((id, desc)) => write!(f, "ERR {} {}", id, desc),
-
-            Self::Option((s, None)) => write!(f, "OPTION {}", s),
-            Self::Option((s, Some(v))) => write!(f, "OPTION {}={}", s, v),
-
-            Self::D(arg) => write!(f, "D {}", arg),
-            Self::End => write!(f, "END"),
-
-            Self::Comment(None) => write!(f, "#"),
-            Self::Comment(Some(arg)) => write!(f, "# {}", arg),
-
-            Self::Bye(None) => write!(f, "BYE"),
-            Self::Bye(Some(v)) => write!(f, "BYE {}", v),
-        }
+impl server::Handler for Handler {
+    async fn option(&mut self, _o: OptionRequest<'_>) -> OptionResult {
+        Ok(Response::Ok(None))
     }
-}
 
-impl<'a> From<&'a str> for IpcIn<'a> {
-    fn from(command: &'a str) -> IpcIn<'a> {
-        match command.len() {
-            0 => Self::Comment,
-            _ => match &command[..1] {
-                "#" => Self::Comment,
-                _ => match command.split_once(' ').or(Some((command, ""))) {
-                    Some(("BYE", _)) => Self::Bye,
-                    Some(("RESET", _)) => Self::Reset,
-                    Some(("END", _)) => Self::End,
-                    Some(("HELP", _)) => Self::Help,
-                    Some(("NOP", _)) => Self::Nop,
-
-                    Some(("GETPIN", _)) => Self::GetPin,
-                    Some(("SETDESC", arg)) => Self::SetDesc(arg),
-                    Some(("SETTITLE", arg)) => Self::SetTitle(arg),
-                    Some(("SETPROMPT", arg)) => Self::SetPrompt(arg),
-
-                    Some(("OPTION", arg)) => match arg.split_once('=') {
-                        Some((k, v)) => Self::Option((k, Some(v))),
-                        None => Self::Option((arg, None)),
-                    },
-
-                    _ => Self::Unknown(command),
-                },
-            },
-        }
+    fn help(&mut self) -> HelpResult {
+        None
     }
-}
 
-#[async_std::main]
-async fn main() {
-    let mut config = ConfigRon::default();
+    async fn handle(&mut self, r: HandlerRequest<'_>) -> HandlerResult {
+        match r {
+            ("SETPROMPT", _) => Ok(Some(Response::Ok(None))),
+            ("SETOK", _) => Ok(Some(Response::Ok(None))),
+            ("SETCANCEL", _) => Ok(Some(Response::Ok(None))),
+            ("SETNOTOK", _) => Ok(Some(Response::Ok(None))),
+            ("SETERROR", _) => Ok(Some(Response::Ok(None))),
+            ("SETQUALITYBAR", _) => Ok(Some(Response::Ok(None))),
+            ("SETQUALITYBAR_TT", _) => Ok(Some(Response::Ok(None))),
+            ("CONFIRM", _) => Ok(Some(Response::Ok(None))),
+            ("MESSAGE", _) => Ok(Some(Response::Ok(None))),
 
-    let mut lines = BufReader::new(stdin()).lines();
-    let mut stdout = stdout();
-
-    let _ = writeln!(stdout, "{}", IpcOut::Ok(Some("Pleased to meet you"))).await;
-    while let Some(line) = lines.next().await {
-        let l = match line {
-            Ok(l) => l,
-            Err(e) => {
-                let _ = writeln!(stdout, "{}", IpcOut::Err(("536871187", e.to_string(),)),).await;
-                break;
-            }
-        };
-
-        let command = IpcIn::from(l.as_str());
-        match command {
-            IpcIn::Comment => continue,
-
-            IpcIn::Bye => {
-                let _ = writeln!(stdout, "{}", IpcOut::Ok(Some("closing connection"))).await;
-                break;
-            }
-
-            IpcIn::Reset => {
-                config = ConfigRon::default();
-                let _ = writeln!(stdout, "{}", IpcOut::Ok(None)).await;
-            }
-
-            IpcIn::End => {
-                todo!();
-            }
-
-            IpcIn::Help => {
-                todo!();
-            }
-
-            IpcIn::Option(_p) => {
-                let _ = writeln!(stdout, "{}", IpcOut::Ok(None)).await;
-            }
-
-            IpcIn::Nop => {
-                let _ = writeln!(stdout, "{}", IpcOut::Ok(None)).await;
-            }
-
-            IpcIn::GetPin => match anyrun(&config).await {
-                Ok(s) => {
-                    let _ = writeln!(stdout, "{}", s).await;
-                    let _ = writeln!(stdout, "{}", IpcOut::Ok(None)).await;
-                }
-                Err(e) => {
-                    let _ = writeln!(stdout, "{}", e).await;
-                    break;
-                }
+            ("GETPIN", _) => match anyrun(&self.config).await {
+                Ok(v) => Ok(Some(Response::D(v))),
+                Err((e, s)) => Err((e, Some(s))),
             },
-
-            IpcIn::SetDesc(d) => {
+            ("SETTITLE", Some(d)) => {
                 let decoded = match percent_decode_str(d) {
                     Ok(decoder) => match decoder.decode_utf8() {
                         Ok(v) => v.to_string(),
@@ -168,48 +73,48 @@ async fn main() {
                     Err(_) => d.to_string(),
                 };
 
-                config.description = Some(decoded);
-                let _ = writeln!(stdout, "{}", IpcOut::Ok(None)).await;
+                self.config.ron.title = Some(decoded);
+                Ok(Some(Response::Ok(None)))
             }
-
-            IpcIn::SetTitle(t) => {
-                let decoded = match percent_decode_str(t) {
+            ("SETDESC", Some(d)) => {
+                let decoded = match percent_decode_str(d) {
                     Ok(decoder) => match decoder.decode_utf8() {
                         Ok(v) => v.to_string(),
-                        Err(_) => t.to_string(),
+                        Err(_) => d.to_string(),
                     },
-                    Err(_) => t.to_string(),
+                    Err(_) => d.to_string(),
                 };
 
-                config.title = Some(decoded);
-                let _ = writeln!(stdout, "{}", IpcOut::Ok(None)).await;
+                self.config.ron.description = Some(decoded);
+                Ok(Some(Response::Ok(None)))
             }
 
-            IpcIn::SetPrompt(_p) => {
-                let _ = writeln!(stdout, "{}", IpcOut::Ok(None)).await;
-            }
-
-            IpcIn::Unknown(v) => {
-                let _ = writeln!(stdout, "{}", IpcOut::Comment(Some(v))).await;
-                // let _ = writeln!(stdout, "{}", IpcOut::Ok(None)).await;
-                // pinentry will break when atually returning an error
-                // I need to look into that
-                let _ = writeln!(
-                    stdout,
-                    "{}",
-                    IpcOut::Err((
-                        "536871187",
-                        "Unknown IPC command <User defined source 1>".into()
-                    )),
-                )
-                .await;
-            }
+            _ => Err((ResponseErr::Gpg(errors::GpgErrorCode::UnknownCommand), None)),
         }
+    }
+
+    fn reset(&mut self) {
+        self.config.ron = ConfigRon::default();
     }
 }
 
-async fn anyrun<'a>(config: &ConfigRon) -> Result<String, IpcOut<'a>> {
-    let mut process = match Command::new("anyrun")
+#[async_std::main]
+async fn main() -> Result<(), ServerError> {
+    let reader = BufReader::new(stdin()).lines();
+    let writer = stdout();
+
+    let handler = Handler {
+        config: HandlerConfig {
+            args: Args::parse(),
+            ron: ConfigRon::default(),
+        },
+    };
+
+    server::start(reader, writer, handler).await
+}
+
+async fn anyrun<'a>(config: &HandlerConfig) -> Result<String, (response::ResponseErr, String)> {
+    let mut process = match Command::new(config.args.anyrun.clone())
         .args([
             "--plugins",
             "libpinentry.so",
@@ -223,30 +128,43 @@ async fn anyrun<'a>(config: &ConfigRon) -> Result<String, IpcOut<'a>> {
         .spawn()
     {
         Ok(c) => c,
-        Err(e) => return Result::Err(IpcOut::Err(("ERR", e.to_string()))),
+        Err(e) => {
+            return Err((
+                response::ResponseErr::Gpg(GpgErrorCode::Unexpected),
+                format!("error while spawning anyrun: {}", e),
+            ))
+        }
     };
 
     let mut anyrun_stdin = process.stdin.take().unwrap();
-    let c = match ron::to_string(config) {
+    let c = match ron::to_string(&config.ron) {
         Ok(s) => s,
-        Err(e) => return Result::Err(IpcOut::Err(("ERR", e.to_string()))),
+        Err(e) => {
+            return Err((
+                response::ResponseErr::Gpg(GpgErrorCode::Unexpected),
+                format!("error while serializing ron {}", e),
+            ))
+        }
     };
 
     let _ = writeln!(anyrun_stdin, "{}", c).await;
     if let Err(e) = process.status().await {
-        return Result::Err(IpcOut::Err(("ERR", e.to_string())));
+        return Err((
+            response::ResponseErr::Gpg(GpgErrorCode::Unexpected),
+            format!("error while reading anyrun output: {}", e),
+        ));
     }
 
     let mut lines = BufReader::new(process.stdout.take().unwrap()).lines();
     if let Some(line) = lines.next().await {
         return match line {
-            Ok(v) => Result::Ok(v),
-            Err(e) => return Result::Err(IpcOut::Err(("ERR", e.to_string()))),
+            Ok(v) => Ok(v),
+            Err(e) => Err((
+                response::ResponseErr::Gpg(GpgErrorCode::Unexpected),
+                format!("error while reading anyrun output: {}", e),
+            )),
         };
     }
 
-    Result::Err(IpcOut::Err((
-        "83886179",
-        "Operation cancelled <pinentry-anyrun>".into(),
-    )))
+    Ok(String::new())
 }
